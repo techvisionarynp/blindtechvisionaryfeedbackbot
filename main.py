@@ -6,7 +6,7 @@ from typing import Dict
 
 TOKEN = "8439254355:AAF61_xtEU8EXfVjw8MfdMxghuCk5jyZhhw"
 ADMIN_ID = 7026190306
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-vercel-app.vercel.app")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 app = FastAPI()
 ptb = Application.builder().token(TOKEN).build()
