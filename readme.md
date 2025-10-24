@@ -1,0 +1,2 @@
+# bot
+# blind tech visionary
