@@ -6,7 +6,7 @@ from typing import Dict
 
 TOKEN = "8439254355:AAF61_xtEU8EXfVjw8MfdMxghuCk5jyZhhw"
 ADMIN_ID = 7026190306
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL = "https://blindtechvisionaryfeedbackbot.vercel.app/webhook"
 
 app = FastAPI()
 ptb = Application.builder().token(TOKEN).build()
@@ -207,7 +207,7 @@ ptb.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 @app.on_event("startup")
 async def on_startup():
     await ptb.initialize()
-    webhook_url = f"{WEBHOOK_URL}/webhook"
+    webhook_url = f"{WEBHOOK_URL}"
     await ptb.bot.set_webhook(url=webhook_url)
     commands = [
         ("start", "Start the bot"),
@@ -233,6 +233,6 @@ async def root():
 
 @app.get("/set_webhook")
 async def set_webhook_route():
-    webhook_url = f"{WEBHOOK_URL}/webhook"
+    webhook_url = f"{WEBHOOK_URL}"
     await ptb.bot.set_webhook(url=webhook_url)
     return {"webhook_set": webhook_url}
