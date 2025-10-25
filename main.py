@@ -1,18 +1,18 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-import os
+from contextlib import asynccontextmanager
+from http import HTTPStatus
 from typing import Dict
 
 TOKEN = "8439254355:AAF61_xtEU8EXfVjw8MfdMxghuCk5jyZhhw"
 ADMIN_ID = 7026190306
 WEBHOOK_URL = "https://blindtechvisionaryfeedbackbot.vercel.app/webhook"
 
-app = FastAPI()
-ptb = Application.builder().token(TOKEN).build()
-
 user_messages: Dict[int, dict] = {}
 user_states: Dict[int, dict] = {}
+
+ptb = Application.builder().updater(None).token(TOKEN).read_timeout(7).get_updates_read_timeout(42).build()
 
 def get_user_keyboard():
     return InlineKeyboardMarkup([
@@ -67,7 +67,7 @@ async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif update.message.sticker:
             await context.bot.send_sticker(ADMIN_ID, update.message.sticker.file_id, reply_markup=admin_kb)
             await context.bot.send_message(ADMIN_ID, f"@{username}: (sticker)", reply_markup=admin_kb)
-    except:
+    except Exception as e:
         pass
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,7 +99,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                     await context.bot.send_video(uid, update.message.video.file_id, caption=message_text, reply_markup=get_user_keyboard())
                 elif update.message.document:
                     await context.bot.send_document(uid, update.message.document.file_id, caption=message_text, reply_markup=get_user_keyboard())
-            except:
+            except Exception as e:
                 pass
         await update.message.reply_text("Message sent to all users successfully.")
         user_states[ADMIN_ID] = {}
@@ -117,7 +117,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 elif update.message.document:
                     await context.bot.send_document(target_user_id, update.message.document.file_id, caption=update.message.caption, reply_markup=get_user_keyboard())
                 await update.message.reply_text("You replied successfully.")
-            except:
+            except Exception as e:
                 await update.message.reply_text("Failed to send reply.")
         user_states[ADMIN_ID] = {}
 
@@ -154,7 +154,7 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(target_user_id, reply_text, reply_markup=get_user_keyboard())
                 await update.message.reply_text("You replied successfully.")
-            except:
+            except Exception as e:
                 await update.message.reply_text("Failed to send reply.")
         else:
             await update.message.reply_text("User not found.")
@@ -204,18 +204,22 @@ ptb.add_handler(CommandHandler("sendmessagetoall", sendmessagetoall_command))
 ptb.add_handler(CallbackQueryHandler(button_callback))
 ptb.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
 
-@app.on_event("startup")
-async def on_startup():
-    await ptb.initialize()
-    webhook_url = f"{WEBHOOK_URL}"
-    await ptb.bot.set_webhook(url=webhook_url)
-    commands = [
-        ("start", "Start the bot"),
-        ("reply", "Reply to a message"),
-        ("sendnewmessage", "Send new message to admin"),
-        ("sendmessagetoall", "Send message to all users (admin only)")
-    ]
-    await ptb.bot.set_my_commands(commands)
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await ptb.bot.set_webhook(url=WEBHOOK_URL)
+    async with ptb:
+        await ptb.start()
+        commands = [
+            ("start", "Start the bot"),
+            ("reply", "Reply to a message"),
+            ("sendnewmessage", "Send new message to admin"),
+            ("sendmessagetoall", "Send message to all users (admin only)")
+        ]
+        await ptb.bot.set_my_commands(commands)
+        yield
+        await ptb.stop()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -223,9 +227,9 @@ async def webhook(request: Request):
         data = await request.json()
         update = Update.de_json(data, ptb.bot)
         await ptb.process_update(update)
-        return {"ok": True}
+        return Response(status_code=HTTPStatus.OK)
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return Response(status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 @app.get("/")
 async def root():
@@ -233,6 +237,6 @@ async def root():
 
 @app.get("/set_webhook")
 async def set_webhook_route():
-    webhook_url = f"{WEBHOOK_URL}"
-    await ptb.bot.set_webhook(url=webhook_url)
-    return {"webhook_set": webhook_url}
+    await ptb.bot.set_webhook(url=WEBHOOK_URL)
+    info = await ptb.bot.get_webhook_info()
+    return {"webhook_set": WEBHOOK_URL, "webhook_info": str(info)}
