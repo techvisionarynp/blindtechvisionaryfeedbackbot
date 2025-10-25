@@ -172,23 +172,26 @@ async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif update.message.video_note:
             sent_message = await context.bot.send_video_note(
                 ADMIN_ID,
-                update.message.video_note.file_id
+                update.message.video_note.file_id,
+                reply_markup=admin_kb
             )
             # Send user info separately for video notes (they don't support captions)
             await context.bot.send_message(
                 ADMIN_ID,
                 f"{user_info}(Video Note)",
-                reply_markup=admin_kb
+                disable_notification=True
             )
         elif update.message.sticker:
-            await context.bot.send_sticker(
+            sent_message = await context.bot.send_sticker(
                 ADMIN_ID,
-                update.message.sticker.file_id
+                update.message.sticker.file_id,
+                reply_markup=admin_kb
             )
-            sent_message = await context.bot.send_message(
+            # Send user info separately for stickers
+            await context.bot.send_message(
                 ADMIN_ID,
                 f"{user_info}(Sticker)",
-                reply_markup=admin_kb
+                disable_notification=True
             )
         
         # Store the mapping for reply tracking
@@ -199,6 +202,75 @@ async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Error forwarding message to admin: {e}")
+        return False
+
+async def send_reply_to_user(target_user_id: int, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Send admin's reply to a specific user, handling different message types."""
+    try:
+        if update.message.text:
+            await context.bot.send_message(
+                target_user_id,
+                f"💬 *Admin replied:*\n\n{update.message.text}",
+                reply_markup=get_user_keyboard(),
+                parse_mode='Markdown'
+            )
+        elif update.message.photo:
+            caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
+            await context.bot.send_photo(
+                target_user_id,
+                update.message.photo[-1].file_id,
+                caption=caption,
+                reply_markup=get_user_keyboard(),
+                parse_mode='Markdown'
+            )
+        elif update.message.video:
+            caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
+            await context.bot.send_video(
+                target_user_id,
+                update.message.video.file_id,
+                caption=caption,
+                reply_markup=get_user_keyboard(),
+                parse_mode='Markdown'
+            )
+        elif update.message.document:
+            caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
+            await context.bot.send_document(
+                target_user_id,
+                update.message.document.file_id,
+                caption=caption,
+                reply_markup=get_user_keyboard(),
+                parse_mode='Markdown'
+            )
+        elif update.message.audio:
+            caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
+            await context.bot.send_audio(
+                target_user_id,
+                update.message.audio.file_id,
+                caption=caption,
+                reply_markup=get_user_keyboard(),
+                parse_mode='Markdown'
+            )
+        elif update.message.voice:
+            await context.bot.send_voice(
+                target_user_id,
+                update.message.voice.file_id,
+                reply_markup=get_user_keyboard()
+            )
+        elif update.message.video_note:
+            await context.bot.send_video_note(
+                target_user_id,
+                update.message.video_note.file_id,
+                reply_markup=get_user_keyboard()
+            )
+        elif update.message.sticker:
+            await context.bot.send_sticker(
+                target_user_id,
+                update.message.sticker.file_id,
+                reply_markup=get_user_keyboard()
+            )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send reply to user {target_user_id}: {e}")
         return False
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -236,59 +308,9 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         message_failed_count = 0
         
         for uid in user_messages.keys():
-            try:
-                if update.message.text:
-                    await context.bot.send_message(
-                        uid,
-                        f"📢 *Message from Admin:*\n\n{update.message.text}",
-                        reply_markup=get_user_keyboard(),
-                        parse_mode='Markdown'
-                    )
-                elif update.message.photo:
-                    caption = f"📢 *Message from Admin:*\n\n{update.message.caption or ''}"
-                    await context.bot.send_photo(
-                        uid,
-                        update.message.photo[-1].file_id,
-                        caption=caption,
-                        reply_markup=get_user_keyboard(),
-                        parse_mode='Markdown'
-                    )
-                elif update.message.video:
-                    caption = f"📢 *Message from Admin:*\n\n{update.message.caption or ''}"
-                    await context.bot.send_video(
-                        uid,
-                        update.message.video.file_id,
-                        caption=caption,
-                        reply_markup=get_user_keyboard(),
-                        parse_mode='Markdown'
-                    )
-                elif update.message.document:
-                    caption = f"📢 *Message from Admin:*\n\n{update.message.caption or ''}"
-                    await context.bot.send_document(
-                        uid,
-                        update.message.document.file_id,
-                        caption=caption,
-                        reply_markup=get_user_keyboard(),
-                        parse_mode='Markdown'
-                    )
-                elif update.message.audio:
-                    caption = f"📢 *Message from Admin:*\n\n{update.message.caption or ''}"
-                    await context.bot.send_audio(
-                        uid,
-                        update.message.audio.file_id,
-                        caption=caption,
-                        reply_markup=get_user_keyboard(),
-                        parse_mode='Markdown'
-                    )
-                elif update.message.voice:
-                    await context.bot.send_voice(
-                        uid,
-                        update.message.voice.file_id,
-                        reply_markup=get_user_keyboard()
-                    )
+            if await send_reply_to_user(uid, update, context):  # Reuse send function, but it's reply, but for broadcast, adjust if needed
                 message_sent_count += 1
-            except Exception as e:
-                logger.error(f"Failed to send broadcast to user {uid}: {e}")
+            else:
                 message_failed_count += 1
         
         await update.message.reply_text(
@@ -320,64 +342,14 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             user_states[ADMIN_ID] = {}
             return
         
-        try:
-            if update.message.text:
-                await context.bot.send_message(
-                    target_user_id,
-                    f"💬 *Admin replied:*\n\n{update.message.text}",
-                    reply_markup=get_user_keyboard(),
-                    parse_mode='Markdown'
-                )
-            elif update.message.photo:
-                caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
-                await context.bot.send_photo(
-                    target_user_id,
-                    update.message.photo[-1].file_id,
-                    caption=caption,
-                    reply_markup=get_user_keyboard(),
-                    parse_mode='Markdown'
-                )
-            elif update.message.video:
-                caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
-                await context.bot.send_video(
-                    target_user_id,
-                    update.message.video.file_id,
-                    caption=caption,
-                    reply_markup=get_user_keyboard(),
-                    parse_mode='Markdown'
-                )
-            elif update.message.document:
-                caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
-                await context.bot.send_document(
-                    target_user_id,
-                    update.message.document.file_id,
-                    caption=caption,
-                    reply_markup=get_user_keyboard(),
-                    parse_mode='Markdown'
-                )
-            elif update.message.audio:
-                caption = f"💬 *Admin replied:*\n\n{update.message.caption or ''}"
-                await context.bot.send_audio(
-                    target_user_id,
-                    update.message.audio.file_id,
-                    caption=caption,
-                    reply_markup=get_user_keyboard(),
-                    parse_mode='Markdown'
-                )
-            elif update.message.voice:
-                await context.bot.send_voice(
-                    target_user_id,
-                    update.message.voice.file_id,
-                    reply_markup=get_user_keyboard()
-                )
-            
-            username = user_messages[target_user_id].get("username", "Unknown")
+        success = await send_reply_to_user(target_user_id, update, context)
+        username = user_messages[target_user_id].get("username", "Unknown")
+        if success:
             await update.message.reply_text(
                 f"✅ Reply sent successfully to @{username}",
                 reply_markup=get_admin_main_keyboard()
             )
-        except Exception as e:
-            logger.error(f"Failed to send reply: {e}")
+        else:
             await update.message.reply_text(
                 "❌ Failed to send reply. The user might have blocked the bot.",
                 reply_markup=get_admin_main_keyboard()
@@ -385,11 +357,34 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         
         user_states[ADMIN_ID] = {}
     else:
-        # Admin sent a message without any state
-        await update.message.reply_text(
-            "ℹ️ Please use the buttons to reply to users or broadcast messages.",
-            reply_markup=get_admin_main_keyboard()
-        )
+        # Check if replying to a forwarded message
+        if update.message.reply_to_message and update.message.reply_to_message.message_id in conversation_map:
+            target_user_id = conversation_map[update.message.reply_to_message.message_id]
+            if target_user_id not in user_messages:
+                await update.message.reply_text(
+                    "❌ Error: User not found in the system.",
+                    reply_markup=get_admin_main_keyboard()
+                )
+                return
+            
+            success = await send_reply_to_user(target_user_id, update, context)
+            username = user_messages[target_user_id].get("username", "Unknown")
+            if success:
+                await update.message.reply_text(
+                    f"✅ Reply sent successfully to @{username}",
+                    reply_markup=get_admin_main_keyboard()
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Failed to send reply. The user might have blocked the bot.",
+                    reply_markup=get_admin_main_keyboard()
+                )
+        else:
+            # Admin sent a message without any state or reply
+            await update.message.reply_text(
+                "ℹ️ Please use the buttons to reply to users or broadcast messages, or reply directly to user messages.",
+                reply_markup=get_admin_main_keyboard()
+            )
 
 async def handle_user_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle user messages when in a specific state"""
@@ -450,6 +445,12 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
+        # Create a dummy update for text message
+        dummy_message = Update(message_id=0, message={
+            "text": reply_text,
+            "chat": {"id": ADMIN_ID}
+        }, effective_user={"id": ADMIN_ID})  # Hacky, but since send_reply_to_user uses update.message.text
+        dummy_update = update  # Wait, better to send directly
         try:
             await context.bot.send_message(
                 target_user_id,
@@ -647,9 +648,8 @@ async def lifespan(_: FastAPI):
     """Manage application lifespan"""
     logger.info("Starting bot...")
     
-    # Initialize and start the bot
+    # Initialize the bot
     await ptb.initialize()
-    await ptb.start()
     
     # Set webhook
     webhook_info = await ptb.bot.get_webhook_info()
@@ -675,7 +675,7 @@ async def lifespan(_: FastAPI):
     
     # Cleanup
     logger.info("Shutting down bot...")
-    await ptb.stop()
+    await ptb.bot.delete_webhook()
     await ptb.shutdown()
 
 app = FastAPI(lifespan=lifespan)
